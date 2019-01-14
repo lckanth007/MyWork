@@ -12,15 +12,15 @@ import scala.io.Source.fromURL
 
 object SparkIngestApp {
   def main(args: Array[String]) {
-    var properties : Properties = null
-    properties = new Properties()
+    //var properties : Properties = null
+    //properties = new Properties()
     // for reading from resource folder
     // val reader = fromURL(getClass.getResource("job.properties")).bufferedReader()
     //  properties.load(reader);
 
     //for reading the properties file from the external path
-    properties.load(new FileInputStream(args(0)))
-
+    //properties.load(new FileInputStream(args(0)))
+    val inputPath = args(0)
     var Exitcode = 0
     val StartedTime = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH:mm:ss").format(LocalDateTime.now)
     val log = ("Started", StartedTime)
@@ -42,12 +42,33 @@ object SparkIngestApp {
     try {
       val processingTime = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH:mm:ss").format(LocalDateTime.now)
       val log1 = ("InProcessing", processingTime)
+
+
       LogList = log1.toString().replace("(", "").replace(")", "") :: LogList
-      //val datapath=("file://"+properties.get("SRC_FILE_PATH")+"/"+properties.get("SRC_FILE_NM"))
-      val datapath=(properties.get("SRC_FILE_PATH")+"/"+properties.get("SRC_FILE_NM"))
+
+      val job_input = spark.sparkContext.textFile(inputPath)
+      val job_properties = job_input.collect().toList.flatMap(x => x.split("=")).grouped(2).collect { case List(k, v) => k -> v }.toMap
+
+      val SRC_FILE_PATH = job_properties("SRC_FILE_PATH")
+      val SRC_FILE_STATS_NM = job_properties("SRC_FILE_STATS_NM")
+      val SRC_FILE_NM = job_properties("SRC_FILE_NM")
+      val SRC_FILE_SCHEMA_NM = job_properties("SRC_FILE_SCHEMA_NM")
+      val tbl_id = job_properties("tbl_id")
+      val TBL_NAME = job_properties("TBL_NAME")
+
+
+
+
+
+      //val datapath=(properties.get("SRC_FILE_PATH")+"/"+properties.get("SRC_FILE_NM"))
+
+      val datapath = (SRC_FILE_PATH + "/" + SRC_FILE_NM)
+
       println(datapath)
-      // val schemapath=("file://"+properties.get("SRC_FILE_PATH")+"/"+properties.get("SRC_FILE_SCHEMA_NM"))
-      val schemapath=(properties.get("SRC_FILE_PATH")+"/"+properties.get("SRC_FILE_SCHEMA_NM"))
+      //val schemapath=(properties.get("SRC_FILE_PATH")+"/"+properties.get("SRC_FILE_SCHEMA_NM"))
+
+      val schemapath = (SRC_FILE_PATH + "/" + SRC_FILE_SCHEMA_NM)
+
       println(schemapath)
 
       println("Proceeding with data file")
@@ -62,8 +83,9 @@ object SparkIngestApp {
         .csv(datapath)
       //   .option("path",datapath)
 
-      val dftbl=properties.get("TBL_NAME") + "_df"
+      //val dftbl=properties.get("TBL_NAME") + "_df"
 
+      val dftbl = TBL_NAME + "_df"
 
 
       println("Data file Found")
@@ -97,7 +119,9 @@ object SparkIngestApp {
         raw5
       }
 
-      val tblname=properties.get("TAR_FILE_NAME")
+      //val tblname=properties.get("TAR_FILE_NAME")
+      val tblname = TBL_NAME
+
       //spark.sql("drop table if exists "+ tblname)
       //val input5 = "create table if not exists " + tblname + "(" + input4.collect().toList.mkString(",") + ") stored as parquetfile"
       //Table created in hive default database
