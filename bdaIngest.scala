@@ -55,12 +55,18 @@ object bdaIngest {
       println(inputPath)
 
       LogList = log1.toString().replace("(", "").replace(")", "") :: LogList
+
       println(inputPath)
+
       val job_input = spark.sparkContext.textFile(inputPath)
 
       val job_properties = job_input.collect().toList.flatMap(x => x.split("=")).grouped(2).collect { case List(k, v) => k -> v }.toMap
 
+      //var prop = spark.sparkContext.wholeTextFiles(inputPath).collect.map(_._2.toString()).mkString("")
+
+
       val SRC_FILE_PATH = job_properties("SRC_FILE_PATH")
+
       val SRC_FILE_STATS_NM = job_properties("SRC_FILE_STATS_NM")
       val SRC_FILE_NM = job_properties("SRC_FILE_NM")
       val SRC_FILE_SCHEMA_NM = job_properties("SRC_FILE_SCHEMA_NM")
@@ -70,44 +76,84 @@ object bdaIngest {
       val TIME_COLS = job_properties("TIME_COLS")
       val Dedup_order_Key = job_properties("Dedup_order_Key")
       val datapath = (SRC_FILE_PATH + "/" + SRC_FILE_NM)
+      val mval = job_properties("MVAL")
 
 
       val a = TIME_COLS.split(",")
 
-
-
-      def reformat_date(date: String):String = {
+      def reformat_date(date: String): String = {
         val a = date.length()
-        val b =19
-        if(a>10){
-        if (a > b){
+        if (a == 10) {
+          if (date(10) == ':') {
+            val b = date.substring(0, 10) + " " + date.substring(11)
+            b.concat(" 00:00:00.000000")
+          }
+          else {
+            date.concat(" 00:00:00.000000")
+          }
+        } else if (a == 19) {
 
-          if (date(10) == ':'){
-            val a = date.split(":")
-            val b = a(0)+ " " +a(2)+":"+a(3)
-            b
-          }
-          else{
-            date
-          }
-        }
-        else{
-          if (date(10) == ':'){
-            val a = date.split(":")
-            val b = a(0)+ " " +a(2)+":"+a(3)
+          if (date(10) == ':') {
+            val b = date.substring(0, 10) + " " + date.substring(11)
             b.concat(".000000")
           }
-          else{
+          else {
             date.concat(".000000")
           }
-        }}
-        else{
-          date.concat(" 00:00:00.000000")
-        }
 
+
+        } else if (a == 26) {
+          if (date(10) == ':') {
+            val b = date.substring(0, 10) + " " + date.substring(11)
+            b
+          }
+          else {
+            date
+          }
+
+        } else {
+          val b = "00-00-00 00:00:00.000000"
+          b
+        }
       }
 
+
+
+//        if(a>10) {
+//          if (!date.isEmpty) {
+//            if (a > b) {
+//              if (date(10) == ':') {
+//                val b =  date.substring(0,10) +" " + date.substring(11)
+//                b
+//              }
+//              else {
+//                date
+//              }
+//            }
+//            else {
+//              if (date(10) == ':') {
+//
+//                val b = date.substring(0,10) +" " + date.substring(11)
+//                b.concat(".000000")
+//              }
+//              else {
+//                date.concat(".000000")
+//              }
+//            }
+//          }
+//          else {
+//            date.concat(" 00:00:00.000000")
+//          }
+//        }
+//        else{
+//          date
+//        }
+
+//      }
+
       val formatting = udf(reformat_date _)
+
+
 //      val file = "datapath"
 //      val conf = new Configuration()
 //
@@ -126,15 +172,18 @@ object bdaIngest {
 //      println(outputFile)
 
 
+
       println("Proceeding with data file")
 
-      var dataDF1 = spark.read
-        .option("delimiter", "\u0007")
-        .option("ignoreLeadingWhiteSpace", "True")
-        .option("ignoreTrailingWhiteSpace", "True")
-        .option("escape", "\u000D")
-        .csv(datapath)
-      import spark.sqlContext.implicits._
+//      if(mval=="true"){
+//
+//      }
+      var dataDF1 = spark.read.options(Map("delimiter"->"\u0007","ignoreLeadingWhiteSpace"->"True", "ignoreTrailingWhiteSpace"->"True","multiline"->mval,"quoteMode"->"NONE")).csv(datapath)
+//        .option("ignoreLeadingWhiteSpace", "True")
+//        .option("ignoreTrailingWhiteSpace", "True")
+//        .option("quoteMode", "NONE")
+//        .csv(datapath)
+
 
 //      var dateFmtDF=dataDF1.withColumn("_c4", date_format(to_timestamp($"_c4", "yyyy-MM-dd HH:mm:ss"), "yyyy-MM-dd HH:mm:ss")).withColumn("_c28", date_format(to_timestamp($"_c28", "yyyy-MM-dd:HH:mm:ss"), "yyyy-MM-dd HH:mm:ss")).withColumn("_c32", date_format(to_timestamp($"_c32", "yyyy-MM-dd:HH:mm:ss"), "yyyy-MM-dd HH:mm:ss"))
 
@@ -144,15 +193,12 @@ object bdaIngest {
         print("\nstart"+i)
         print("\ncount of df at"+i+"is:"+dataDF1.count())
         var dataDFq=dataDF1.withColumn(i, formatting(col(i)))
-
-        print("\ncount of df at"+i+"is:"+dataDFq.count())
-        dataDFq.select("_c4","_c28","_c32").show()
         dataDF1=dataDFq
-        print("\nend"+i)
-        dataDF1.select("_c4","_c28","_c32").show()
       }
 
-     //val dataNoDupDF=dataDF1.withColumn("PmtId_rownum", row_number().over(Window.partitionBy("a").orderBy("a").filter($"PmtId_rownum" === 1).drop("PmtId_rownum")
+      import spark.sqlContext.implicits._
+
+     val dataNoDupDF=dataDF1.withColumn("PmtId_rownum", row_number().over(Window.partitionBy(col(Dedup_Key)).orderBy(col(Dedup_order_Key).desc))).filter($"PmtId_rownum" === 1).drop("PmtId_rownum")
 
       val dftbl = TBL_NAME + "_df"
 
@@ -166,7 +212,9 @@ object bdaIngest {
       val completedTime = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH_mm_ss_n").format(LocalDateTime.now)
       println("before write log with date" + completedTime)
 
-      dataDF1.write.options(Map("delimiter" -> "\u0007")).mode(SaveMode.Overwrite).csv("/user/n46995a/output/extract_date=" + completedTime)
+      dataNoDupDF.write.options(Map("delimiter" -> "\u0007")).mode(SaveMode.Overwrite).csv("/user/n46995a/output/extract_date=" + completedTime)
+
+
 
       val log2 = ("Completed", completedTime)
       LogList = log2.toString().replace("(", "").replace(")", "") :: LogList
